@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  db:
+    image: mariadb:10.11
+    container_name: shinobi-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-Sh1n0b1_root_2026}
+      MARIADB_DATABASE: shinobi
+      MARIADB_USER: shinobi
+      MARIADB_PASSWORD: shinobi
+    volumes:
+      - shinobi_db_data:/var/lib/mysql
+    networks:
+      - shinobi-internal
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  app:
+    image: registry.gitlab.com/shinobi-systems/shinobi:dev
+    container_name: shinobi-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # MySQL connection settings
+      MYSQL_DATABASE: shinobi
+      MYSQL_HOST: db
+      MYSQL_USER: shinobi
+      MYSQL_PASSWORD: shinobi
+      MYSQL_PORT: 3306
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-Sh1n0b1_root_2026}
+      
+      # DB compatibility settings (for init.sh)
+      DB_HOST: db
+      DB_USER: shinobi
+      DB_PASSWORD: shinobi
+      DB_DATABASE: shinobi
+      DB_PORT: 3306
+      DB_TYPE: mysql
+      
+      # Application settings
+      ADMIN_USER: admin@shinobi.video
+      ADMIN_PASSWORD: admin
+      TZ: America/Mexico_City
+      APP_HOST: http://localhost:8080
+      SUBSCRIPTION_ID: ""
+      
+      # Plugin settings
+      PLUGIN_KEYS: "{}"
+      
+      # SSL settings
+      SSL_ENABLED: "false"
+      SSL_COUNTRY: CA
+      SSL_STATE: BC
+      SSL_LOCATION: Vancouver
+      SSL_ORGANIZATION: "Shinobi Systems"
+      SSL_ORGANIZATION_UNIT: "IT Department"
+      SSL_COMMON_NAME: nvr.ninja
+      
+      # PM2 settings
+      PM2_PUBLIC_KEY: ""
+      PM2_SECRET_KEY: ""
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/config:rw
+      - ./customAutoLoad:/customAutoLoad:rw
+      - ./videos:/opt/shinobi/videos:rw
+      - shinobi_app_data:/home/Shinobi
+      - ./scripts/init.sh:/home/Shinobi/Docker/init.sh:ro
+    networks:
+      - shinobi-internal
+      - shinobi-external
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  shinobi-internal:
+    driver: bridge
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.name: shinobi-int
+  shinobi-external:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: shinobi-ext
+
+volumes:
+  shinobi_db_data:
+    driver: local
+  shinobi_app_data:
+    driver: local
